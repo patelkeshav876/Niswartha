@@ -29,6 +29,7 @@ import {
   AlertDialogTitle,
 } from '../../components/ui/alert-dialog';
 import { Badge } from '../../components/ui/badge';
+import { ImageSearchPicker } from '../../components/ImageSearchPicker';
 import { Plus, Search, Edit2, Trash2, ArrowLeft, IndianRupee } from 'lucide-react';
 import { mockNeeds } from '../../data/mock';
 import { Link } from 'react-router';
@@ -354,12 +355,11 @@ export function ManageNeeds() {
               </div>
             </div>
             <div>
-              <Label htmlFor="img">Image URL (optional)</Label>
-              <Input
-                id="img"
+              <Label className="mb-2 block">Need image</Label>
+              <ImageSearchPicker
                 value={form.imageUrl}
-                onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
-                placeholder="https://…"
+                onChange={(url) => setForm((f) => ({ ...f, imageUrl: url }))}
+                searchQuery={form.title}
               />
             </div>
             <div>

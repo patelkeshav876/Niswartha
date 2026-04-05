@@ -6,22 +6,35 @@ import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import {
   ArrowRight,
   Settings,
-  History,
   HelpCircle,
   LogOut,
-  Heart,
   Calendar,
   Mail,
   Users,
   Activity,
   IndianRupee,
   Clock3,
+  MapPin,
 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useUser } from '../context/UserContext';
 import { api } from '../lib/api';
 import { mockAshrams } from '../data/mock';
-import type { Donation } from '../types';
+import {
+  buildEventLookupMap,
+  resolveEvent,
+  placeholderEventForBooking,
+} from '../lib/eventBookingHelpers';
+import { buildAshramLookupMap } from '../lib/ashramLookup';
+import { mergeUpcomingPreview, todayISODateLocal } from '../lib/mergeUserBookings';
+import type {
+  Ashram,
+  Donation,
+  Event,
+  EventBookingRecord,
+  UnifiedBookingRow,
+  VisitBookingRecord,
+} from '../types';
 
 export function Profile() {
   const navigate = useNavigate();
@@ -29,6 +42,10 @@ export function Profile() {
   const [donations, setDonations] = useState<Donation[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
+  const [bookingPreview, setBookingPreview] = useState<UnifiedBookingRow[]>([]);
+  const [bookingEvents, setBookingEvents] = useState<Map<string, Event>>(new Map());
+  const [bookingAshrams, setBookingAshrams] = useState<Map<string, Ashram>>(new Map());
+  const [bookingsLoading, setBookingsLoading] = useState(true);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -55,6 +72,51 @@ export function Profile() {
       window.clearInterval(interval);
     };
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser?.id || isAdmin) {
+      setBookingPreview([]);
+      setBookingEvents(new Map());
+      setBookingAshrams(new Map());
+      setBookingsLoading(false);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      setBookingsLoading(true);
+      try {
+        const [eventRows, visitRows, eventMap, ashramMap] = await Promise.all([
+          api.getEventBookings({ userId: currentUser.id }) as Promise<EventBookingRecord[]>,
+          api.getVisitBookings({ userId: currentUser.id }) as Promise<VisitBookingRecord[]>,
+          buildEventLookupMap(),
+          buildAshramLookupMap(),
+        ]);
+        const evList = Array.isArray(eventRows) ? eventRows : [];
+        const vList = Array.isArray(visitRows) ? visitRows : [];
+        const todayIso = todayISODateLocal();
+        const preview = mergeUpcomingPreview(evList, vList, todayIso, 3);
+        await Promise.all(
+          preview
+            .filter((p) => p.kind === 'event')
+            .map((p) => resolveEvent((p.booking as EventBookingRecord).eventId, eventMap)),
+        );
+        if (!alive) return;
+        setBookingPreview(preview);
+        setBookingEvents(eventMap);
+        setBookingAshrams(ashramMap);
+      } catch {
+        if (!alive) return;
+        setBookingPreview([]);
+        setBookingEvents(new Map());
+        setBookingAshrams(new Map());
+      } finally {
+        if (alive) setBookingsLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [currentUser?.id, isAdmin]);
 
   const stats = useMemo(() => {
     const totalDonations = donations.reduce((sum, d) => sum + d.amount, 0);
@@ -155,9 +217,9 @@ export function Profile() {
                   <button
                     type="button"
                     className="bg-zinc-900 text-white rounded-xl py-2 text-[11px] font-medium"
-                    onClick={() => navigate('/favorites')}
+                    onClick={() => navigate('/my-bookings')}
                   >
-                    Saved
+                    Bookings
                   </button>
                 </div>
               </div>
@@ -185,6 +247,88 @@ export function Profile() {
                 <p className="text-2xl font-bold">{loading ? '...' : `${stats.livesImpacted}+`}</p>
               </Card>
             </div>
+
+            <Card className="p-4 rounded-2xl">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold">Bookings</h3>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto p-0"
+                  onClick={() => navigate('/my-bookings')}
+                >
+                  View all <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                </Button>
+              </div>
+              <div className="space-y-2 mb-4">
+                {bookingsLoading ? (
+                  <p className="text-xs text-muted-foreground">Loading bookings…</p>
+                ) : bookingPreview.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No upcoming bookings.{' '}
+                    <button
+                      type="button"
+                      className="font-medium text-primary underline-offset-2 hover:underline"
+                      onClick={() => navigate('/events')}
+                    >
+                      Events
+                    </button>
+                    {' · '}
+                    <button
+                      type="button"
+                      className="font-medium text-primary underline-offset-2 hover:underline"
+                      onClick={() => navigate('/')}
+                    >
+                      Visit
+                    </button>
+                  </p>
+                ) : (
+                  bookingPreview.map((row) => {
+                    const b = row.booking;
+                    const title =
+                      row.kind === 'event'
+                        ? (bookingEvents.get((b as EventBookingRecord).eventId) ??
+                            placeholderEventForBooking((b as EventBookingRecord).eventId)
+                          ).title
+                        : `Visit — ${bookingAshrams.get((b as VisitBookingRecord).ashramId)?.name ?? 'Organization'}`;
+                    const loc =
+                      row.kind === 'event'
+                        ? (bookingEvents.get((b as EventBookingRecord).eventId) ??
+                            placeholderEventForBooking((b as EventBookingRecord).eventId)
+                          ).location
+                        : bookingAshrams.get((b as VisitBookingRecord).ashramId)?.location ?? '—';
+                    return (
+                      <button
+                        key={`${row.kind}-${b.id}`}
+                        type="button"
+                        onClick={() => navigate('/my-bookings')}
+                        className="w-full rounded-xl bg-muted/50 px-3 py-2 text-left transition-colors hover:bg-muted/70"
+                      >
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-medium line-clamp-1 flex-1">{title}</p>
+                          <span className="shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground">
+                            {row.kind === 'event' ? 'Event' : 'Visit'}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                          <span className="inline-flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {new Date(b.date + 'T12:00:00').toLocaleDateString('en-IN', {
+                              day: 'numeric',
+                              month: 'short',
+                            })}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <MapPin className="h-3 w-3 shrink-0" />
+                            <span className="line-clamp-1">{loc}</span>
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </Card>
 
             <Card className="p-4 rounded-2xl">
               <div className="flex items-center justify-between mb-3">
@@ -235,26 +379,15 @@ export function Profile() {
 
         <div className="grid grid-cols-2 gap-3">
           {!isAdmin && (
-            <>
-              <Card
-                className="p-3 cursor-pointer hover:bg-muted/50"
-                onClick={() => navigate('/my-bookings')}
-              >
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-primary" />
-                  <span className="text-xs font-medium">My Bookings</span>
-                </div>
-              </Card>
-              <Card
-                className="p-3 cursor-pointer hover:bg-muted/50"
-                onClick={() => navigate('/favorites')}
-              >
-                <div className="flex items-center gap-2">
-                  <Heart className="h-4 w-4 text-red-500" />
-                  <span className="text-xs font-medium">Favorites</span>
-                </div>
-              </Card>
-            </>
+            <Card
+              className="p-3 cursor-pointer hover:bg-muted/50"
+              onClick={() => navigate('/my-bookings')}
+            >
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-primary" />
+                <span className="text-xs font-medium">My Bookings</span>
+              </div>
+            </Card>
           )}
           <Card className="p-3 cursor-pointer hover:bg-muted/50" onClick={() => navigate('/help')}>
             <div className="flex items-center gap-2">

@@ -40,6 +40,8 @@ export interface Need {
   createdAt: string;
 }
 
+export type EventApprovalStatus = 'approved' | 'pending_approval' | 'declined';
+
 export interface Event {
   id: string;
   ashramId: string;
@@ -49,6 +51,14 @@ export interface Event {
   location: string;
   description: string;
   imageUrl?: string;
+  /** Admin-created events may omit; user-suggested use `pending_approval` until approved */
+  status?: EventApprovalStatus;
+  suggestedBy?: string;
+  suggestedByName?: string;
+  isUserSuggested?: boolean;
+  eventType?: string;
+  createdAt?: string;
+  capacity?: string | number;
 }
 
 export interface Post {
@@ -70,29 +80,49 @@ export interface Donation {
   needId?: string; // Optional if donating to specific need
 }
 
-export interface Vendor {
+/** Persisted event visit / registration booking */
+export interface EventBookingRecord {
   id: string;
-  name: string;
-  description: string;
-  imageUrl: string;
-  location: string;
-  productsCount: number;
-  email: string;
+  eventId: string;
+  userId?: string;
+  date: string;
+  timeSlot?: string;
+  time?: string;
+  guests?: number;
+  name?: string;
+  email?: string;
   phone?: string;
-  donationPercentage: number; // Percentage of sales that go to orphanages
-  createdAt: string;
+  status?: string;
+  createdAt?: string;
 }
 
-export type ProductCategory = 'Handicrafts' | 'Textiles' | 'Pottery' | 'Jewelry' | 'Home Decor' | 'Food Items';
-
-export interface Product {
+/** On-site ashram visit appointment */
+export interface VisitBookingRecord {
   id: string;
-  vendorId: string;
-  name: string;
-  description: string;
-  price: number;
-  imageUrl: string;
-  category: ProductCategory;
-  inStock: boolean;
-  createdAt: string;
+  ashramId: string;
+  userId?: string;
+  date: string;
+  timeSlot: string;
+  time?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  status?: string;
+  createdAt?: string;
+  type?: 'visit';
+  userLocation?: string;
+  visitorCount?: number;
+  visitorNames?: string[];
+  ageGroup?: string;
+  gender?: string;
+  durationMinutes?: number;
+  purpose?: string;
+  idNumber?: string;
+  idDocumentDataUrl?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
 }
+
+export type UnifiedBookingRow =
+  | { kind: 'event'; booking: EventBookingRecord }
+  | { kind: 'visit'; booking: VisitBookingRecord };

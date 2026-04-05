@@ -2,21 +2,19 @@ import { Link } from 'react-router';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
-import { 
-  Plus, 
-  Users, 
-  Gift, 
-  Calendar, 
-  Settings as SettingsIcon, 
+import {
+  Plus,
+  Users,
+  Gift,
+  Calendar,
+  Settings as SettingsIcon,
   MessageSquare,
-  Store,
-  Package,
   TrendingUp,
   Home,
   Heart,
   IndianRupee,
   Activity,
-  Clock3
+  Clock3,
 } from 'lucide-react';
 import { mockNeeds, mockAshrams } from '../../data/mock';
 
@@ -35,8 +33,6 @@ export function AdminDashboard() {
     { label: 'Events', icon: Calendar, color: 'bg-purple-100 text-purple-600', link: '/admin/events' },
     { label: 'Feed Posts', icon: MessageSquare, color: 'bg-green-100 text-green-600', link: '/admin/feed' },
     { label: 'Profile', icon: Home, color: 'bg-orange-100 text-orange-600', link: '/profile' },
-    { label: 'Vendors', icon: Store, color: 'bg-pink-100 text-pink-600', link: '/admin/vendors' },
-    { label: 'Products', icon: Package, color: 'bg-teal-100 text-teal-600', link: '/admin/products' },
   ];
 
   const recentActivities = [
@@ -57,12 +53,12 @@ export function AdminDashboard() {
       color: 'bg-purple-500/10 text-purple-600'
     },
     {
-      type: 'vendor',
-      icon: Store,
-      title: 'New vendor registration',
-      description: 'Traditional Handicrafts submitted application',
+      type: 'visit',
+      icon: Users,
+      title: 'Visit booking',
+      description: 'A family signed up for next Saturday open day',
       time: '6 hours ago',
-      color: 'bg-orange-500/10 text-orange-600'
+      color: 'bg-orange-500/10 text-orange-600',
     },
     {
       type: 'need',
@@ -108,18 +104,12 @@ export function AdminDashboard() {
                 <Clock3 className="h-3.5 w-3.5" />
                 <span>Updated just now</span>
               </div>
-              <div className="grid grid-cols-4 gap-2 mt-4">
+              <div className="grid grid-cols-2 gap-2 mt-4">
                 <Link to="/admin/needs">
                   <button type="button" className="w-full bg-zinc-900 text-white rounded-xl py-2 text-[11px] font-medium">Needs</button>
                 </Link>
                 <Link to="/admin/events">
                   <button type="button" className="w-full bg-zinc-900 text-white rounded-xl py-2 text-[11px] font-medium">Events</button>
-                </Link>
-                <Link to="/admin/vendors">
-                  <button type="button" className="w-full bg-zinc-900 text-white rounded-xl py-2 text-[11px] font-medium">Vendors</button>
-                </Link>
-                <Link to="/admin/products">
-                  <button type="button" className="w-full bg-zinc-900 text-white rounded-xl py-2 text-[11px] font-medium">Products</button>
                 </Link>
               </div>
             </div>
@@ -150,7 +140,7 @@ export function AdminDashboard() {
           <h2 className="text-lg font-bold">Quick Actions</h2>
           <Badge className="bg-primary/10 text-primary border-primary/20">Super Admin</Badge>
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           {quickActions.map((action, idx) => (
             <Link key={idx} to={action.link}>
               <Card className="hover:bg-muted/50 active:scale-95 transition-all cursor-pointer h-full">

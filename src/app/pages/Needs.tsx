@@ -3,11 +3,10 @@ import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { mockNeeds } from '../data/mock';
-import { Filter, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { Input } from '../components/ui/input';
 import { Link } from 'react-router';
 import { api } from '../lib/api';
-import { addNeedToCart } from '../lib/donationCart';
 import type { Need } from '../types';
 import { ScrollReveal } from '../components/ScrollReveal';
 
@@ -113,10 +112,7 @@ export function Needs() {
                   </div>
                   <div className="flex gap-2">
                     <Button className="flex-1" size="sm" asChild>
-                       <Link
-                         to={`/donate/${need.ashramId}?need=${need.id}`}
-                         onClick={() => addNeedToCart(need)}
-                       >
+                       <Link to={`/donate-flow/${need.ashramId}/${need.id}`}>
                          Donate now
                        </Link>
                     </Button>

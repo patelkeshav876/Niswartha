@@ -1,3 +1,5 @@
+import type { Ashram, Event, Need } from '../types';
+
 function getApiBase(): string {
   const raw = import.meta.env.VITE_API_URL;
   if (raw != null && String(raw).trim() !== '') {
@@ -44,7 +46,7 @@ export const api = {
   updateUser: (id: string, data: Record<string, unknown>) =>
     fetchAPI(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
-  getAshrams: () => fetchAPI('/ashrams'),
+  getAshrams: () => fetchAPI<Ashram[]>('/ashrams'),
   getAshram: (id: string) => fetchAPI(`/ashrams/${id}`),
   createAshram: (data: Record<string, unknown>) =>
     fetchAPI('/ashrams', { method: 'POST', body: JSON.stringify(data) }),
@@ -52,7 +54,9 @@ export const api = {
     fetchAPI(`/ashrams/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
   getNeeds: (ashramId?: string) =>
-    fetchAPI(ashramId ? `/needs?ashramId=${encodeURIComponent(ashramId)}` : '/needs'),
+    fetchAPI<Need[]>(
+      ashramId ? `/needs?ashramId=${encodeURIComponent(ashramId)}` : '/needs',
+    ),
   getNeed: (id: string) => fetchAPI(`/needs/${id}`),
   createNeed: (data: Record<string, unknown>) =>
     fetchAPI('/needs', { method: 'POST', body: JSON.stringify(data) }),
@@ -61,7 +65,9 @@ export const api = {
   deleteNeed: (id: string) => fetchAPI(`/needs/${id}`, { method: 'DELETE' }),
 
   getEvents: (ashramId?: string) =>
-    fetchAPI(ashramId ? `/events?ashramId=${encodeURIComponent(ashramId)}` : '/events'),
+    fetchAPI<Event[]>(
+      ashramId ? `/events?ashramId=${encodeURIComponent(ashramId)}` : '/events',
+    ),
   getEvent: (id: string) => fetchAPI(`/events/${id}`),
   createEvent: (data: Record<string, unknown>) =>
     fetchAPI('/events', { method: 'POST', body: JSON.stringify(data) }),
@@ -69,12 +75,13 @@ export const api = {
     fetchAPI(`/events/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteEvent: (id: string) => fetchAPI(`/events/${id}`, { method: 'DELETE' }),
 
-  getEventBookings: (opts?: { eventId?: string; userId?: string }) => {
+  getEventBookings: async (opts?: { eventId?: string; userId?: string }) => {
     const params = new URLSearchParams();
     if (opts?.eventId) params.set('eventId', opts.eventId);
     if (opts?.userId) params.set('userId', opts.userId);
     const q = params.toString();
-    return fetchAPI(q ? `/event-bookings?${q}` : '/event-bookings');
+    const data = await fetchAPI<unknown>(q ? `/event-bookings?${q}` : '/event-bookings');
+    return Array.isArray(data) ? data : [];
   },
   getEventBooking: (id: string) => fetchAPI(`/event-bookings/${id}`),
   createEventBooking: (data: Record<string, unknown>) =>
@@ -82,6 +89,37 @@ export const api = {
   updateEventBooking: (id: string, data: Record<string, unknown>) =>
     fetchAPI(`/event-bookings/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteEventBooking: (id: string) => fetchAPI(`/event-bookings/${id}`, { method: 'DELETE' }),
+
+  getVisitAvailability: (ashramId: string, date: string) =>
+    fetchAPI<{ slots: Record<string, { booked: number; capacity: number; available: number }> }>(
+      `/visit-availability?ashramId=${encodeURIComponent(ashramId)}&date=${encodeURIComponent(date)}`,
+    ),
+
+  sendVisitOtp: (phone: string) =>
+    fetchAPI<{ ok: boolean; devCode?: string; expiresInSeconds?: number }>('/visit-otp/send', {
+      method: 'POST',
+      body: JSON.stringify({ phone }),
+    }),
+
+  verifyVisitOtp: (phone: string, code: string) =>
+    fetchAPI<{ ok: boolean; phoneOtpToken: string }>('/visit-otp/verify', {
+      method: 'POST',
+      body: JSON.stringify({ phone, code }),
+    }),
+
+  getVisitBookings: async (opts?: { ashramId?: string; userId?: string }) => {
+    const params = new URLSearchParams();
+    if (opts?.ashramId) params.set('ashramId', opts.ashramId);
+    if (opts?.userId) params.set('userId', opts.userId);
+    const q = params.toString();
+    const data = await fetchAPI<unknown>(q ? `/visit-bookings?${q}` : '/visit-bookings');
+    return Array.isArray(data) ? data : [];
+  },
+
+  createVisitBooking: (data: Record<string, unknown>) =>
+    fetchAPI('/visit-bookings', { method: 'POST', body: JSON.stringify(data) }),
+
+  deleteVisitBooking: (id: string) => fetchAPI(`/visit-bookings/${id}`, { method: 'DELETE' }),
 
   getPosts: (ashramId?: string) =>
     fetchAPI(ashramId ? `/posts?ashramId=${encodeURIComponent(ashramId)}` : '/posts'),
@@ -101,16 +139,6 @@ export const api = {
 
   createRazorpayOrder: (data: Record<string, unknown>) =>
     fetchAPI('/razorpay/order', { method: 'POST', body: JSON.stringify(data) }),
-
-  getFavorites: (userId: string) =>
-    fetchAPI(`/favorites?userId=${encodeURIComponent(userId)}`),
-  addFavorite: (userId: string, ashramId: string) =>
-    fetchAPI('/favorites', { method: 'POST', body: JSON.stringify({ userId, ashramId }) }),
-  removeFavorite: (userId: string, ashramId: string) =>
-    fetchAPI(
-      `/favorites?userId=${encodeURIComponent(userId)}&ashramId=${encodeURIComponent(ashramId)}`,
-      { method: 'DELETE' },
-    ),
 
   initData: (payload: Record<string, unknown>) =>
     fetchAPI('/init-data', { method: 'POST', body: JSON.stringify(payload) }),

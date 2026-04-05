@@ -42,11 +42,54 @@ const EventModel = generic('EventDoc', 'events');
 const Post = generic('PostDoc', 'posts');
 const Donation = generic('DonationDoc', 'donations');
 const EventBooking = generic('EventBookingDoc', 'event_bookings');
-const FavoriteSchema = new mongoose.Schema(
-  { userId: { type: String, required: true, unique: true }, ashramIds: [String] },
-  { collection: 'favorites' },
-);
-const Favorite = mongoose.models.FavoriteDoc || mongoose.model('FavoriteDoc', FavoriteSchema);
+const VisitBookingModel = generic('VisitBookingDoc', 'visit_bookings');
+
+/** Must match client `VISIT_TIME_SLOTS` ids */
+const VISIT_SLOT_IDS = [
+  'visit-09',
+  'visit-10',
+  'visit-11',
+  'visit-12',
+  'visit-14',
+  'visit-15',
+  'visit-16',
+];
+const VISIT_SLOT_ID_SET = new Set(VISIT_SLOT_IDS);
+const VISIT_SLOT_CAPACITY = 6;
+
+function isValidVisitBookingDate(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return false;
+  const t = new Date(`${dateStr}T12:00:00`);
+  if (Number.isNaN(t.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const d = new Date(t);
+  d.setHours(0, 0, 0, 0);
+  return d >= today;
+}
+
+function normalizeVisitPhone(p) {
+  const d = String(p || '').replace(/\D/g, '');
+  return d.length >= 10 ? d.slice(-10) : d;
+}
+
+function sumVisitorUseBySlot(rows) {
+  const used = {};
+  for (const r of rows) {
+    if (!r.timeSlot || r.status === 'cancelled') continue;
+    const n = Math.min(VISIT_SLOT_CAPACITY, Math.max(1, Number(r.visitorCount) || 1));
+    used[r.timeSlot] = (used[r.timeSlot] || 0) + n;
+  }
+  return used;
+}
+
+const VISIT_PURPOSES = new Set(['visit', 'darshan', 'meditation', 'event', 'volunteer']);
+const VISIT_AGE_GROUPS = new Set(['child', 'adult', 'senior', 'mixed']);
+
+/** phone -> { code, exp } */
+const visitOtpPending = new Map();
+/** token -> { phoneNorm, exp } */
+const visitOtpVerified = new Map();
 
 async function connectDb() {
   if (!MONGODB_URI) {
@@ -295,7 +338,10 @@ app.get('/api/event-bookings', async (req, res) => {
     const q = {};
     if (eventId) q.eventId = eventId;
     if (userId) q.userId = userId;
-    const rows = await EventBooking.find(Object.keys(q).length ? q : {}).lean();
+    if (Object.keys(q).length === 0) {
+      return res.status(400).json({ error: 'eventId or userId query param is required' });
+    }
+    const rows = await EventBooking.find(q).lean();
     res.json(rows.map(({ _id, ...r }) => r));
   } catch (e) {
     res.status(500).json({ error: String(e.message) });
@@ -341,6 +387,247 @@ app.put('/api/event-bookings/:id', async (req, res) => {
 app.delete('/api/event-bookings/:id', async (req, res) => {
   try {
     await EventBooking.deleteOne({ id: req.params.id });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message) });
+  }
+});
+
+// --- Visit phone OTP (swap for SMS provider in production) ---
+app.post('/api/visit-otp/send', (req, res) => {
+  try {
+    const phoneNorm = normalizeVisitPhone(req.body?.phone);
+    if (phoneNorm.length < 10) {
+      return res.status(400).json({ error: 'Enter a valid 10-digit mobile number' });
+    }
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    visitOtpPending.set(phoneNorm, { code, exp: Date.now() + 10 * 60 * 1000 });
+    const out = { ok: true, expiresInSeconds: 600 };
+    if (process.env.VISIT_OTP_DEV === '1') out.devCode = code;
+    res.json(out);
+  } catch (e) {
+    res.status(500).json({ error: String(e.message) });
+  }
+});
+
+app.post('/api/visit-otp/verify', (req, res) => {
+  try {
+    const phoneNorm = normalizeVisitPhone(req.body?.phone);
+    const code = String(req.body?.code || '').trim();
+    if (phoneNorm.length < 10 || code.length !== 6) {
+      return res.status(400).json({ error: 'Phone and 6-digit code required' });
+    }
+    const row = visitOtpPending.get(phoneNorm);
+    if (!row || row.exp < Date.now()) {
+      return res.status(400).json({ error: 'OTP expired — request a new code' });
+    }
+    if (row.code !== code) {
+      return res.status(400).json({ error: 'Invalid OTP' });
+    }
+    visitOtpPending.delete(phoneNorm);
+    const token = `votp-${phoneNorm}-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    visitOtpVerified.set(token, { phoneNorm, exp: Date.now() + 30 * 60 * 1000 });
+    res.json({ ok: true, phoneOtpToken: token });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message) });
+  }
+});
+
+// --- Visit availability (ashram site visits) ---
+app.get('/api/visit-availability', async (req, res) => {
+  try {
+    const ashramId = req.query.ashramId;
+    const date = req.query.date;
+    if (!ashramId || !date) {
+      return res.status(400).json({ error: 'ashramId and date query params are required' });
+    }
+    if (!isValidVisitBookingDate(date)) {
+      return res.status(400).json({ error: 'Invalid or past date' });
+    }
+    const rows = await VisitBookingModel.find({
+      ashramId,
+      date,
+      status: { $nin: ['cancelled'] },
+    }).lean();
+    const used = sumVisitorUseBySlot(rows);
+    const slots = {};
+    for (const sid of VISIT_SLOT_IDS) {
+      const booked = used[sid] || 0;
+      slots[sid] = {
+        booked,
+        capacity: VISIT_SLOT_CAPACITY,
+        available: Math.max(0, VISIT_SLOT_CAPACITY - booked),
+      };
+    }
+    res.json({ slots });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message) });
+  }
+});
+
+// --- Visit bookings ---
+app.get('/api/visit-bookings', async (req, res) => {
+  try {
+    const { ashramId, userId } = req.query;
+    const q = {};
+    if (ashramId) q.ashramId = ashramId;
+    if (userId) q.userId = userId;
+    if (Object.keys(q).length === 0) {
+      return res.status(400).json({ error: 'ashramId or userId query param is required' });
+    }
+    const rows = await VisitBookingModel.find(q).lean();
+    res.json(rows.map(({ _id, ...r }) => r));
+  } catch (e) {
+    res.status(500).json({ error: String(e.message) });
+  }
+});
+
+app.get('/api/visit-bookings/:id', async (req, res) => {
+  try {
+    const b = await VisitBookingModel.findOne({ id: req.params.id }).lean();
+    if (!b) return res.status(404).json({ error: 'Visit booking not found' });
+    const { _id, ...rest } = b;
+    res.json(rest);
+  } catch (e) {
+    res.status(500).json({ error: String(e.message) });
+  }
+});
+
+app.post('/api/visit-bookings', async (req, res) => {
+  try {
+    const booking = req.body || {};
+    const {
+      ashramId,
+      userId,
+      date,
+      timeSlot,
+      time,
+      name,
+      email,
+      phone,
+      phoneOtpToken,
+      userLocation,
+      visitorCount: vcRaw,
+      visitorNames,
+      ageGroup,
+      gender,
+      durationMinutes,
+      purpose,
+      idNumber,
+      idDocumentDataUrl,
+      emergencyContactName,
+      emergencyContactPhone,
+    } = booking;
+
+    if (!ashramId || !userId || !date || !timeSlot) {
+      return res.status(400).json({ error: 'ashramId, userId, date, and timeSlot are required' });
+    }
+    if (!VISIT_SLOT_ID_SET.has(timeSlot)) {
+      return res.status(400).json({ error: 'Invalid time slot' });
+    }
+    if (!isValidVisitBookingDate(date)) {
+      return res.status(400).json({ error: 'Cannot book a past date' });
+    }
+
+    const str = (v) => (typeof v === 'string' ? v.trim() : '');
+    if (!str(name) || !str(email) || !str(phone)) {
+      return res.status(400).json({ error: 'Name, email, and phone are required' });
+    }
+    if (!str(userLocation)) {
+      return res.status(400).json({ error: 'Your location / city is required' });
+    }
+    if (!str(idNumber)) {
+      return res.status(400).json({ error: 'ID number is required' });
+    }
+    if (!str(emergencyContactName) || !str(emergencyContactPhone)) {
+      return res.status(400).json({ error: 'Emergency contact name and phone are required' });
+    }
+    if (!purpose || !VISIT_PURPOSES.has(String(purpose))) {
+      return res.status(400).json({ error: 'Valid visit purpose is required' });
+    }
+    if (!ageGroup || !VISIT_AGE_GROUPS.has(String(ageGroup))) {
+      return res.status(400).json({ error: 'Valid age group is required' });
+    }
+
+    const visitorCount = Math.min(VISIT_SLOT_CAPACITY, Math.max(1, Number(vcRaw) || 0));
+    if (!Number.isFinite(visitorCount) || visitorCount < 1) {
+      return res.status(400).json({ error: 'Visitor count must be at least 1' });
+    }
+    if (!Array.isArray(visitorNames) || visitorNames.length !== visitorCount) {
+      return res.status(400).json({ error: 'Provide full name for each visitor' });
+    }
+    for (let i = 0; i < visitorNames.length; i++) {
+      if (!str(visitorNames[i])) {
+        return res.status(400).json({ error: `Visitor ${i + 1} name is required` });
+      }
+    }
+
+    const phoneNorm = normalizeVisitPhone(phone);
+    if (phoneNorm.length < 10) {
+      return res.status(400).json({ error: 'Valid phone number is required' });
+    }
+    const tok = str(phoneOtpToken);
+    const otpRow = visitOtpVerified.get(tok);
+    if (!otpRow || otpRow.exp < Date.now() || otpRow.phoneNorm !== phoneNorm) {
+      return res.status(400).json({ error: 'Verify your phone with OTP before submitting' });
+    }
+
+    if (idDocumentDataUrl && String(idDocumentDataUrl).length > 450000) {
+      return res.status(400).json({ error: 'ID document image is too large (max ~300KB)' });
+    }
+
+    const dup = await VisitBookingModel.findOne({
+      userId,
+      ashramId,
+      date,
+      timeSlot,
+      status: { $nin: ['cancelled'] },
+    }).lean();
+    if (dup) {
+      return res.status(409).json({ error: 'You already have a booking for this date and time' });
+    }
+
+    const slotRows = await VisitBookingModel.find({
+      ashramId,
+      date,
+      timeSlot,
+      status: { $nin: ['cancelled'] },
+    }).lean();
+    const used = sumVisitorUseBySlot(slotRows);
+    const usedHere = used[timeSlot] || 0;
+    if (usedHere + visitorCount > VISIT_SLOT_CAPACITY) {
+      return res.status(409).json({ error: 'Not enough space left in this time slot for your group' });
+    }
+
+    const id = booking.id || `visit-${Date.now()}`;
+    const { phoneOtpToken: _dropOtp, ...bookingRest } = booking;
+    const doc = {
+      ...bookingRest,
+      id,
+      type: 'visit',
+      visitorCount,
+      visitorNames: visitorNames.map((n) => str(n)),
+      status: booking.status || 'confirmed',
+      createdAt: booking.createdAt || new Date().toISOString(),
+      time: time || booking.time,
+      gender: gender ? str(gender) : undefined,
+      durationMinutes:
+        durationMinutes != null && durationMinutes !== ''
+          ? Math.max(0, Math.min(480, Number(durationMinutes) || 0)) || undefined
+          : undefined,
+      idDocumentDataUrl: idDocumentDataUrl ? String(idDocumentDataUrl) : undefined,
+    };
+    await VisitBookingModel.findOneAndUpdate({ id }, doc, { upsert: true, new: true }).lean();
+    visitOtpVerified.delete(tok);
+    res.json(doc);
+  } catch (e) {
+    res.status(500).json({ error: String(e.message) });
+  }
+});
+
+app.delete('/api/visit-bookings/:id', async (req, res) => {
+  try {
+    await VisitBookingModel.deleteOne({ id: req.params.id });
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: String(e.message) });
@@ -495,50 +782,6 @@ app.post('/api/donations/batch', async (req, res) => {
   }
 });
 
-// --- Favorites ---
-app.get('/api/favorites', async (req, res) => {
-  try {
-    const userId = req.query.userId;
-    if (!userId) return res.status(400).json({ error: 'userId is required' });
-    const row = await Favorite.findOne({ userId }).lean();
-    res.json(row?.ashramIds || []);
-  } catch (e) {
-    res.status(500).json({ error: String(e.message) });
-  }
-});
-
-app.post('/api/favorites', async (req, res) => {
-  try {
-    const { userId, ashramId } = req.body;
-    if (!userId || !ashramId) {
-      return res.status(400).json({ error: 'userId and ashramId are required' });
-    }
-    let row = await Favorite.findOne({ userId }).lean();
-    const list = row?.ashramIds || [];
-    if (!list.includes(ashramId)) list.push(ashramId);
-    await Favorite.findOneAndUpdate({ userId }, { userId, ashramIds: list }, { upsert: true }).lean();
-    res.json({ success: true, favorites: list });
-  } catch (e) {
-    res.status(500).json({ error: String(e.message) });
-  }
-});
-
-app.delete('/api/favorites', async (req, res) => {
-  try {
-    const userId = req.query.userId;
-    const ashramId = req.query.ashramId;
-    if (!userId || !ashramId) {
-      return res.status(400).json({ error: 'userId and ashramId are required' });
-    }
-    const row = await Favorite.findOne({ userId }).lean();
-    const list = (row?.ashramIds || []).filter((id) => id !== ashramId);
-    await Favorite.findOneAndUpdate({ userId }, { userId, ashramIds: list }, { upsert: true }).lean();
-    res.json({ success: true, favorites: list });
-  } catch (e) {
-    res.status(500).json({ error: String(e.message) });
-  }
-});
-
 // --- Seed ---
 app.post('/api/init-data', async (req, res) => {
   try {
@@ -576,8 +819,19 @@ app.post('/api/init-data', async (req, res) => {
 
 connectDb()
   .then(() => {
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`API listening on http://localhost:${PORT}`);
+    });
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(
+          `\n[API] Port ${PORT} is already in use.\n` +
+            `  Run: npx kill-port ${PORT}\n` +
+            `  Or set PORT=4001 in your .env (Vite proxy uses the same PORT).\n`,
+        );
+        process.exit(1);
+      }
+      throw err;
     });
   })
   .catch((err) => {

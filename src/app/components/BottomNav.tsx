@@ -1,4 +1,4 @@
-import { Home, Heart, Calendar, User, ShoppingBag } from 'lucide-react';
+import { Home, Heart, Calendar, User } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router';
 import { cn } from '../lib/utils';
 
@@ -7,7 +7,6 @@ const PROFILE_SECTION_PREFIXES = [
   '/settings',
   '/donation-history',
   '/my-bookings',
-  '/favorites',
   '/help',
 ] as const;
 
@@ -30,7 +29,6 @@ export function BottomNav() {
   const navItems = [
     { icon: Home, label: 'Home', path: '/' },
     { icon: Heart, label: 'Needs', path: '/needs' },
-    { icon: ShoppingBag, label: 'Shop', path: '/earn-support' },
     { icon: Calendar, label: 'Events', path: '/events' },
     { icon: User, label: 'Profile', path: '/profile' },
   ] as const;
@@ -40,8 +38,7 @@ export function BottomNav() {
     navItems.findIndex((item) => pathMatchesItem(pathname, item.path)),
   );
 
-  // Five equal columns: indicator center = (index + 0.5) / 5 of bar width
-  const indicatorLeftPercent = ((activeIndex + 0.5) / 5) * 100;
+  const indicatorLeftPercent = ((activeIndex + 0.5) / 4) * 100;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 pb-safe">
@@ -62,7 +59,7 @@ export function BottomNav() {
             />
           </div>
 
-          <div className="relative z-10 grid h-16 grid-cols-5">
+          <div className="relative z-10 grid h-16 grid-cols-4">
             {navItems.map((item) => {
               const isActive = pathMatchesItem(pathname, item.path);
               return (

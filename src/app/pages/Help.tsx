@@ -29,8 +29,8 @@ export function Help() {
       answer: 'Many ashrams welcome visitors! Check the ashram\'s profile for contact information and visit their Events page to see upcoming open house events or volunteer opportunities.',
     },
     {
-      question: 'How do I save favorite ashrams?',
-      answer: 'Click the heart icon on any ashram card to add it to your favorites. Access all your saved ashrams from the Favorites page in your profile.',
+      question: 'How do I register for an event?',
+      answer: 'Open Events, choose an event, then tap Register / Join. After you confirm, your booking appears under Profile and My Bookings.',
     },
     {
       question: 'What payment methods are accepted?',

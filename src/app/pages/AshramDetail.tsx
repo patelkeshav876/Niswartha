@@ -5,7 +5,6 @@ import { Badge } from '../components/ui/badge';
 import { Tabs } from '../components/CustomTabs';
 import { Card, CardContent } from '../components/ui/card';
 import { MapPin, Phone, Globe, Calendar, Share2, Heart, Facebook } from 'lucide-react';
-import { useUser } from '../context/UserContext';
 import { mockAshrams, mockNeeds, mockEvents, mockPosts } from '../data/mock';
 import { api } from '../lib/api';
 import type { Ashram, Need, Post, Event as EventItem } from '../types';
@@ -15,9 +14,7 @@ import { FloatingQuickContact } from '../components/FloatingQuickContact';
 export function AshramDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { currentUser } = useUser();
   const [activeTab, setActiveTab] = useState('about');
-  const [isFavorite, setIsFavorite] = useState(false);
   const [ashram, setAshram] = useState<Ashram | undefined>(() => mockAshrams.find((a) => a.id === id));
   const [needs, setNeeds] = useState<Need[]>(() => mockNeeds.filter((n) => n.ashramId === id));
   const [events, setEvents] = useState<EventItem[]>(() => mockEvents.filter((e) => e.ashramId === id));
@@ -44,7 +41,7 @@ export function AshramDetail() {
         if (cancelled) return;
         setAshram(a);
         setNeeds(n);
-        setEvents(e);
+        if (Array.isArray(e)) setEvents(e);
         setPosts(p);
       } catch {
         /* mock already applied */
@@ -54,33 +51,6 @@ export function AshramDetail() {
       cancelled = true;
     };
   }, [id]);
-
-  useEffect(() => {
-    if (!currentUser?.id || !id) return;
-    (async () => {
-      try {
-        const ids = await api.getFavorites(currentUser.id);
-        setIsFavorite(Array.isArray(ids) && ids.includes(id));
-      } catch {
-        setIsFavorite(false);
-      }
-    })();
-  }, [currentUser?.id, id]);
-
-  const toggleFavorite = async () => {
-    if (!currentUser?.id || !id) return;
-    try {
-      if (isFavorite) {
-        await api.removeFavorite(currentUser.id, id);
-        setIsFavorite(false);
-      } else {
-        await api.addFavorite(currentUser.id, id);
-        setIsFavorite(true);
-      }
-    } catch {
-      /* ignore */
-    }
-  };
 
   if (!ashram) {
     return <div className="p-8 text-center">Ashram not found</div>;
@@ -173,7 +143,11 @@ export function AshramDetail() {
             </div>
           </div>
           <div className="px-4 pb-4">
-             <Button size="sm" className="w-full text-xs h-8" onClick={() => handleDonate()}>
+             <Button
+               size="sm"
+               className="w-full text-xs h-8"
+               onClick={() => navigate(`/donate-flow/${need.ashramId}/${need.id}`)}
+             >
                Donate Now
              </Button>
           </div>
@@ -250,16 +224,6 @@ export function AshramDetail() {
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-arrow-left"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
           </Button>
           <div className="flex gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-white hover:bg-white/20 rounded-full"
-              type="button"
-              onClick={() => toggleFavorite()}
-              aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-            >
-              <Heart className={`h-5 w-5 ${isFavorite ? 'fill-red-400 text-red-400' : ''}`} />
-            </Button>
             <Button variant="ghost" size="icon" className="text-white hover:bg-white/20 rounded-full" type="button">
               <Share2 className="h-5 w-5" />
             </Button>
@@ -285,9 +249,19 @@ export function AshramDetail() {
                  <div className="h-6 w-6 rounded-full border-2 border-background bg-muted text-[8px] flex items-center justify-center font-bold text-muted-foreground">+2k</div>
               </div>
            </div>
-           <Button onClick={handleDonate} className="rounded-full px-6 shadow-lg shadow-primary/20">
-              Donate
-           </Button>
+           <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch sm:justify-end">
+              <Button
+                variant="outline"
+                className="rounded-full border-primary/50"
+                type="button"
+                onClick={() => id && navigate(`/visit-book/${id}`)}
+              >
+                Book a visit
+              </Button>
+              <Button onClick={handleDonate} className="rounded-full px-6 shadow-lg shadow-primary/20">
+                Donate
+              </Button>
+           </div>
         </div>
 
         <Tabs
