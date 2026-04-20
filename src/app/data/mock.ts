@@ -15,6 +15,13 @@ export const mockUsers: User[] = [
     role: 'admin',
     avatarUrl: 'https://i.pravatar.cc/150?u=sita',
   },
+  {
+    id: 'admin-keshav',
+    name: 'Keshav Patel',
+    email: 'keshavpaterl3690@gmail.com',
+    role: 'admin',
+    avatarUrl: 'https://i.pravatar.cc/150?u=keshav',
+  },
 ];
 
 const FACEBOOK_PAGE =

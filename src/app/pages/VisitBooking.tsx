@@ -40,6 +40,7 @@ import { useUser } from '../context/UserContext';
 import { api } from '../lib/api';
 import { VISIT_TIME_SLOTS, VISIT_SLOT_CAPACITY } from '../lib/visitSlots';
 import type { Ashram } from '../types';
+import { toast } from 'sonner';
 
 const ACCENT = '#FF6633';
 const ACCENT_HOVER = '#e85a2e';
@@ -238,6 +239,7 @@ export function VisitBooking() {
       const out = await api.sendVisitOtp(form.phone);
       if (out.devCode) {
         setOtpHint(`Demo OTP: ${out.devCode}`);
+        setOtpCode(out.devCode);
       } else {
         setOtpHint('We sent a 6-digit code to your phone.');
       }
@@ -291,8 +293,7 @@ export function VisitBooking() {
   const handleSubmit = async () => {
     if (!ashramId || !selectedDate || !ashram || !currentUser?.id) {
       if (!currentUser?.id) {
-        alert('Please sign in to book a visit.');
-        navigate('/login');
+        toast.error('Session expired. Please re-login.');
       }
       return;
     }
@@ -731,7 +732,7 @@ export function VisitBooking() {
 
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 z-[35] border-t border-zinc-200 bg-white/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-md">
+      <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-zinc-200 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-8px_30px_rgb(0,0,0,0.08)]">
         <div className="mx-auto w-full max-w-[480px] space-y-2">
           <Button
             type="button"

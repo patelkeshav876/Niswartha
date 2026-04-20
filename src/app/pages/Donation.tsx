@@ -211,7 +211,7 @@ export function Donation() {
       const order = await api.createRazorpayOrder({
         amount: total,
         currency: 'INR',
-        receipt: `oc_${currentUser.id}_${Date.now()}`,
+        receipt: `rcpt_${currentUser.id.slice(-8)}_${Date.now()}`,
         notes: {
           userId: currentUser.id,
           ashramId: ashram.id,
@@ -299,9 +299,10 @@ export function Donation() {
         setProcessing(false);
       });
       rzp.open();
-    } catch (e) {
-      console.error(e);
-      toast.error('Could not start payment. Check Razorpay keys and API.');
+    } catch (e: any) {
+      console.error('Payment Error:', e);
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`Payment failed: ${msg}`);
     } finally {
       // Processing state is cleared on modal dismiss / failure / success.
     }

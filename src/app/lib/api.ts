@@ -17,8 +17,10 @@ interface FetchOptions extends RequestInit {
 export async function fetchAPI<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
   const { requireAuth: _requireAuth = false, ...fetchOptions } = options;
 
+  const token = localStorage.getItem('token');
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...fetchOptions.headers,
   };
 
@@ -45,6 +47,16 @@ export const api = {
   getUser: (id: string) => fetchAPI(`/users/${id}`),
   updateUser: (id: string, data: Record<string, unknown>) =>
     fetchAPI(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  changePassword: (id: string, data: Record<string, unknown>) =>
+    fetchAPI(`/users/${id}/change-password`, { method: 'POST', body: JSON.stringify(data) }),
+
+  login: (data: Record<string, unknown>) =>
+    fetchAPI<{ user: any; token: string }>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+  register: (data: Record<string, unknown>) =>
+    fetchAPI<{ user: any; token: string }>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+
+  getNotifications: () => fetchAPI<any[]>('/notifications'),
+  markNotificationRead: (id: string) => fetchAPI(`/notifications/${id}/read`, { method: 'PUT' }),
 
   getAshrams: () => fetchAPI<Ashram[]>('/ashrams'),
   getAshram: (id: string) => fetchAPI(`/ashrams/${id}`),

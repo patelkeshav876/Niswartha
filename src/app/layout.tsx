@@ -4,12 +4,13 @@ import { BottomNav } from './components/BottomNav';
 import { SplashScreen } from './components/SplashScreen';
 import { useUser } from './context/UserContext';
 import { cn } from './lib/utils';
+import { Toaster } from 'sonner';
 
 export function Layout() {
   const location = useLocation();
   const { loading } = useUser();
   const [continued, setContinued] = useState(false);
-  const hideBottomNav = ['/login', '/onboarding', '/donate', '/admin'].some((path) =>
+  const hideBottomNav = ['/login', '/onboarding', '/donate', '/admin', '/visit-book', '/events/book', '/events/suggest'].some((path) =>
     location.pathname.startsWith(path)
   );
 
@@ -24,6 +25,7 @@ export function Layout() {
         <main className={cn("flex-1 overflow-y-auto", !hideBottomNav && "pb-16")}>
           <Outlet />
         </main>
+        <Toaster position="top-center" expand={true} richColors closeButton />
         {!hideBottomNav && <BottomNav />}
       </div>
     </div>

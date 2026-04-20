@@ -74,7 +74,7 @@ export function HomeAshramIntro({
                   emphasis
                   className="h-11 w-11 shrink-0 rounded-full text-sm font-bold text-white"
                 >
-                  {currentUser ? currentUser.name.charAt(0) : 'G'}
+                  {currentUser?.name ? currentUser.name.charAt(0) : 'G'}
                 </GlassIconChip>
               </Link>
             </div>
@@ -85,7 +85,7 @@ export function HomeAshramIntro({
             <p className="text-[13px] text-white/60">
               Namaste,{' '}
               <span className="font-medium text-[#E8F5E9]">
-                {currentUser ? getFirstName(currentUser.name) : 'Guest'}
+                {currentUser?.name ? getFirstName(currentUser.name) : 'Guest'}
               </span>
             </p>
             <p className="mb-3 text-[11px] font-medium text-primary/75">Welcome to our family</p>

@@ -18,8 +18,32 @@ import {
 } from 'lucide-react';
 import { mockNeeds, mockAshrams } from '../../data/mock';
 
+import { useEffect, useState } from 'react';
+import { api } from '../../lib/api';
+
 export function AdminDashboard() {
-  const ashram = mockAshrams[0]; // Single ashram
+  const ashram = mockAshrams[0]; 
+  const [visitBookings, setVisitBookings] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [visits, notifs] = await Promise.all([
+          api.getVisitBookings({ ashramId: ashram.id }),
+          api.getNotifications()
+        ]);
+        setVisitBookings(visits);
+        setNotifications(notifs);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, [ashram.id]);
 
   const stats = [
     { label: 'Total Donations', value: '₹1.2L', icon: IndianRupee, color: 'bg-green-100 text-green-600' },
@@ -35,40 +59,24 @@ export function AdminDashboard() {
     { label: 'Profile', icon: Home, color: 'bg-orange-100 text-orange-600', link: '/profile' },
   ];
 
-  const recentActivities = [
-    {
-      type: 'donation',
-      icon: Heart,
-      title: 'New donation received',
-      description: 'Ravi Kumar donated ₹500 for "Monthly Groceries"',
-      time: '2 hours ago',
-      color: 'bg-green-500/10 text-green-600'
-    },
-    {
-      type: 'event',
-      icon: Calendar,
-      title: 'Event booking',
-      description: 'Priya Sharma registered for "Children Day Celebration"',
-      time: '4 hours ago',
-      color: 'bg-purple-500/10 text-purple-600'
-    },
-    {
+  const activities = [
+    ...visitBookings.map(v => ({
       type: 'visit',
       icon: Users,
-      title: 'Visit booking',
-      description: 'A family signed up for next Saturday open day',
-      time: '6 hours ago',
+      title: 'New Visit Booking',
+      description: `${v.name} for ${v.date}`,
+      time: new Date(v.createdAt).toLocaleTimeString(),
       color: 'bg-orange-500/10 text-orange-600',
-    },
-    {
-      type: 'need',
-      icon: Gift,
-      title: 'Need fulfilled',
-      description: '"School Uniforms" need has been 100% fulfilled',
-      time: '1 day ago',
-      color: 'bg-blue-500/10 text-blue-600'
-    },
-  ];
+    })),
+    ...notifications.filter(n => n.type === 'admin_visit').map(n => ({
+      type: 'notification',
+      icon: MessageSquare,
+      title: n.title,
+      description: n.message,
+      time: new Date(n.createdAt).toLocaleTimeString(),
+      color: 'bg-blue-500/10 text-blue-600',
+    }))
+  ].slice(0, 5);
 
   return (
     <div className="flex flex-col min-h-screen bg-background pb-20">
@@ -159,7 +167,10 @@ export function AdminDashboard() {
         <Card className="p-4 rounded-2xl">
           <h2 className="text-sm font-semibold mb-3">Recent Admin Activity</h2>
           <div className="space-y-2">
-            {recentActivities.map((activity, idx) => (
+            {activities.length === 0 && !loading && (
+              <p className="text-xs text-muted-foreground text-center py-4">No recent activity</p>
+            )}
+            {activities.map((activity, idx) => (
               <div key={idx} className="rounded-xl bg-muted/50 px-3 py-2 flex items-start gap-2">
                 <div className={`h-8 w-8 rounded-full flex items-center justify-center ${activity.color}`}>
                   <activity.icon className="h-4 w-4" />

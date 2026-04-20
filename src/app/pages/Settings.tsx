@@ -50,7 +50,7 @@ export function Settings() {
           <div className="flex items-center gap-4">
             <div className="relative">
               <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center text-primary text-2xl font-bold">
-                {currentUser?.name.charAt(0)}
+                {currentUser?.name ? currentUser.name.charAt(0) : '?'}
               </div>
               <Button
                 size="icon"

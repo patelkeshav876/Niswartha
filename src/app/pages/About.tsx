@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { mockAshrams } from '../data/mock';
+import { ScrollReveal } from '../components/ScrollReveal';
 
 export function About() {
   const navigate = useNavigate();
@@ -25,30 +26,30 @@ export function About() {
   const features = [
     {
       icon: BookOpen,
-      title: 'Sign Language Education',
-      description: 'Comprehensive education program using sign language and visual aids'
-    },
-    {
-      icon: Briefcase,
-      title: 'Vocational Training',
-      description: 'Industrial training programs to develop practical skills for employment'
+      title: 'Quality Education',
+      description: 'A structured, inclusive environment from Grades 1 to 12 with modern digital classrooms.'
     },
     {
       icon: Users,
-      title: 'Holistic Care',
-      description: 'Complete care including shelter, nutrition, healthcare, and emotional support'
+      title: 'Advanced Speech Therapy',
+      description: 'Expert special educators and dedicated therapy rooms to enhance communication skills.'
+    },
+    {
+      icon: Briefcase,
+      title: 'Career & Life Skills',
+      description: 'Mentoring for higher education, competitive exams, and job opportunities post-12th.'
     },
     {
       icon: Award,
-      title: 'Skill Development',
-      description: 'Life skills training to promote independence and self-reliance'
+      title: 'Holistic Development',
+      description: 'Comprehensive sports facilities, modern fitness gear, and yoga for balanced growth.'
     }
   ];
 
   const milestones = [
-    { year: 'Since 1980', title: 'Serving the Community', description: '40+ years of dedicated service' },
-    { year: '50+', title: 'Children Supported', description: 'Currently caring for deaf and speech-impaired children' },
-    { year: '100+', title: 'Success Stories', description: 'Alumni leading independent lives' },
+    { year: 'Since 1946', title: 'Legacy of Care', description: 'Decades of dedicated educational service' },
+    { year: 'Awarded', title: 'National Recognition', description: 'Honored by the Government of India' },
+    { year: '100%', title: 'Academic Success', description: 'Consistent perfection in board exams' },
   ];
 
   return (
@@ -101,7 +102,7 @@ export function About() {
               <div>
                 <h3 className="font-bold text-lg mb-2">Our Mission</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  {ashram.description}
+                  To provide every hearing-impaired student with quality education, unwavering confidence, and the practical skills needed for an independent, successful future in a supportive and inclusive environment.
                 </p>
               </div>
             </div>

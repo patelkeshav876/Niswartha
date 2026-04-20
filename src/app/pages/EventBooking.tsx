@@ -22,6 +22,7 @@ import { api } from '../lib/api';
 import { motion, AnimatePresence } from 'motion/react';
 import type { Event as EventType } from '../types';
 import { cn } from '../lib/utils';
+import { toast } from 'sonner';
 
 interface TimeSlot {
   id: string;
@@ -150,8 +151,7 @@ export function EventBooking() {
     }
 
     if (!currentUser?.id) {
-      alert('Please sign in to book an event.');
-      navigate('/login');
+      toast.error('Session expired. Please re-login.');
       return;
     }
 
@@ -541,8 +541,9 @@ export function EventBooking() {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 120, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 320, damping: 28 }}
-            className="fixed bottom-16 left-1/2 z-40 w-full max-w-[480px] -translate-x-1/2 border-t border-border bg-card/95 px-4 py-3 shadow-[0_-12px_40px_rgba(0,0,0,0.12)] backdrop-blur-md pb-safe"
+            className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-card/95 px-4 py-3 shadow-[0_-12px_40px_rgba(0,0,0,0.12)] backdrop-blur-md pb-safe"
           >
+            <div className="mx-auto w-full max-w-[480px]">
             <div className="mb-3 space-y-1 text-sm">
               <div className="flex justify-between gap-2">
                 <span className="text-muted-foreground">Event</span>
@@ -571,6 +572,7 @@ export function EventBooking() {
             >
               {isSubmitting ? 'Confirming…' : 'Confirm booking'}
             </Button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

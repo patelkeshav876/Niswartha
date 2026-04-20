@@ -6,6 +6,14 @@ export interface User {
   email: string;
   role: UserRole;
   avatarUrl?: string;
+  bio?: string;
+  phone?: string;
+  location?: string;
+  notificationPreferences?: {
+    email: boolean;
+    push: boolean;
+    updates: boolean;
+  };
 }
 
 export interface Ashram {

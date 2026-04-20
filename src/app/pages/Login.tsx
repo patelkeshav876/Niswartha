@@ -5,17 +5,35 @@ import { Link, useNavigate } from 'react-router';
 import { cn } from '../lib/utils';
 import { Mail, Lock, EyeOff, UserRound } from 'lucide-react';
 
+import { useUser } from '../context/UserContext';
+import { api } from '../lib/api';
+
 export function Login() {
   const [role, setRole] = useState<'donor' | 'admin'>('donor');
   const [remember, setRemember] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { login } = useUser();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (role === 'admin') {
-      navigate('/admin');
-    } else {
-      navigate('/');
+    setLoading(true);
+    setError(null);
+    try {
+      const resp = await api.login({ email, password });
+      login(resp.user, resp.token);
+      if (resp.user.role === 'admin') {
+        navigate('/admin');
+      } else {
+        navigate('/');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Login failed');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -57,6 +75,12 @@ export function Login() {
           </button>
         </div>
 
+        {error && (
+          <div className="mb-4 p-2.5 rounded-xl bg-red-500/20 border border-red-500/30 text-red-200 text-xs text-center border-solid">
+            {error}
+          </div>
+        )}
+
         <form onSubmit={handleLogin} className="space-y-4">
           <div className="relative">
             <Mail className="absolute left-3 top-3.5 h-4 w-4 text-white/70" />
@@ -64,6 +88,8 @@ export function Login() {
               type="email"
               placeholder="you@example.com"
               required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="pl-10 h-12 bg-black/20 border-white/35 text-white placeholder:text-white/60"
             />
           </div>
@@ -74,6 +100,8 @@ export function Login() {
               type="password"
               placeholder="••••••••"
               required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               className="pl-10 pr-10 h-12 bg-black/20 border-white/35 text-white placeholder:text-white/60"
             />
           </div>
@@ -90,9 +118,10 @@ export function Login() {
 
           <Button
             type="submit"
+            disabled={loading}
             className="w-full text-lg h-12 border-0 bg-gradient-to-r from-lime-400 to-emerald-500 text-zinc-950 hover:from-lime-300 hover:to-emerald-400 shadow-lg"
           >
-            Login
+            {loading ? 'Logging in...' : 'Login'}
           </Button>
         </form>
 

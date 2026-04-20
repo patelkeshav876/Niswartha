@@ -5,20 +5,32 @@
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
-import dotenv from 'dotenv';
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
+import * as dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import Razorpay from 'razorpay';
 
-dotenv.config({ path: new URL('../.env', import.meta.url) });
-dotenv.config({ path: new URL('./.env', import.meta.url) });
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.join(__dirname, '../.env') });
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const PORT = Number(process.env.PORT) || 4000;
+const JWT_SECRET = process.env.JWT_SECRET || 'niswartha-secret-key-2026';
 const RAW_MONGODB_URI = (process.env.MONGODB_URI || '').trim();
 const MONGODB_URI =
   RAW_MONGODB_URI.startsWith('mongodb://') || RAW_MONGODB_URI.startsWith('mongodb+srv://')
     ? RAW_MONGODB_URI
     : 'mongodb://127.0.0.1:27017/orphanage-connect';
-const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || '';
-const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '';
+const RAZORPAY_KEY_ID = (process.env.RAZORPAY_KEY_ID || '').trim();
+const RAZORPAY_KEY_SECRET = (process.env.RAZORPAY_KEY_SECRET || '').trim();
+
+if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
+  console.warn('\n[Razorpay] Warning: RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET is missing in .env. Payments will fail.\n');
+}
 
 const razorpay =
   RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET
@@ -43,6 +55,7 @@ const Post = generic('PostDoc', 'posts');
 const Donation = generic('DonationDoc', 'donations');
 const EventBooking = generic('EventBookingDoc', 'event_bookings');
 const VisitBookingModel = generic('VisitBookingDoc', 'visit_bookings');
+const Notification = generic('NotificationDoc', 'notifications');
 
 /** Must match client `VISIT_TIME_SLOTS` ids */
 const VISIT_SLOT_IDS = [
@@ -101,6 +114,21 @@ async function connectDb() {
   console.log('MongoDB connected');
 }
 
+// --- Middleware ---
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
+
+  try {
+    const verified = jwt.verify(token, JWT_SECRET);
+    req.user = verified;
+    next();
+  } catch (err) {
+    res.status(400).json({ error: 'Invalid token.' });
+  }
+}
+
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected' });
 });
@@ -119,16 +147,66 @@ app.post('/api/razorpay/order', async (req, res) => {
     const order = await razorpay.orders.create({
       amount: Math.round(rupees * 100), // paise
       currency: currency || 'INR',
-      receipt: receipt || `rcpt_${Date.now()}`,
+      receipt: (receipt || `rcpt_${Date.now()}`).slice(0, 40),
       notes: notes || {},
     });
     res.json(order);
+  } catch (e) {
+    console.error('[Razorpay Order Error]:', e);
+    res.status(500).json({ error: String(e.message || 'Razorpay order creation failed') });
+  }
+});
+
+// --- Auth ---
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, password, name, role } = req.body;
+    if (!email || !password || !name) {
+      return res.status(400).json({ error: 'Email, password and name are required' });
+    }
+
+    const existing = await User.findOne({ email }).lean();
+    if (existing) return res.status(400).json({ error: 'User already exists' });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const id = `user-${Date.now()}`;
+    const userDoc = {
+      id,
+      email,
+      password: hashedPassword,
+      name,
+      role: role || 'donor',
+      avatarUrl: `https://i.pravatar.cc/150?u=${id}`,
+      createdAt: new Date().toISOString()
+    };
+
+    await User.create(userDoc);
+    const token = jwt.sign({ id, email, role: userDoc.role }, JWT_SECRET);
+    const { password: _, ...userWithoutPassword } = userDoc;
+    res.json({ user: userWithoutPassword, token });
   } catch (e) {
     res.status(500).json({ error: String(e.message) });
   }
 });
 
-// --- Users ---
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email }).lean();
+    if (!user) return res.status(400).json({ error: 'Invalid email or password' });
+
+    const validPass = await bcrypt.compare(password, user.password);
+    if (!validPass) return res.status(400).json({ error: 'Invalid email or password' });
+
+    const token = jwt.sign({ id: user.id || String(user._id), email: user.email, role: user.role }, JWT_SECRET);
+    const { password: _, ...userWithoutPassword } = user;
+    res.json({ user: { ...userWithoutPassword, id: user.id || String(user._id) }, token });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message) });
+  }
+});
+
+// --- Existing Users endpoint (keep for backwards compat but mention it's legacy) ---
 app.post('/api/users', async (req, res) => {
   try {
     const user = req.body;
@@ -143,9 +221,15 @@ app.post('/api/users', async (req, res) => {
 
 app.get('/api/users/:id', async (req, res) => {
   try {
-    const u = await User.findOne({ id: req.params.id }).lean();
+    const { id } = req.params;
+    // Try custom 'id' field first, then fall back to MongoDB _id
+    let u = await User.findOne({ id }).lean();
+    if (!u) {
+      try { u = await User.findById(id).lean(); } catch (_) {}
+    }
     if (!u) return res.status(404).json({ error: 'User not found' });
-    res.json(u);
+    const { password: _, ...userWithoutPassword } = u;
+    res.json({ ...userWithoutPassword, id: u.id || String(u._id) });
   } catch (e) {
     res.status(500).json({ error: String(e.message) });
   }
@@ -153,11 +237,59 @@ app.get('/api/users/:id', async (req, res) => {
 
 app.put('/api/users/:id', async (req, res) => {
   try {
+    const { id } = req.params;
+    const updates = req.body;
+    
+    // Safety check: remove critical fields
+    delete updates._id;
+    delete updates.id;
+    delete updates.password;
+    delete updates.role;
+    delete updates.email;
+
+    // Try custom 'id' field first, then fall back to MongoDB _id
+    let u = await User.findOneAndUpdate(
+      { id },
+      { $set: updates },
+      { new: true, lean: true }
+    );
+
+    if (!u) {
+      // Fallback: try by MongoDB _id
+      try {
+        u = await User.findByIdAndUpdate(
+          id,
+          { $set: updates },
+          { new: true, lean: true }
+        );
+      } catch (_) {}
+    }
+
+    if (!u) {
+      console.error(`User update failed: User ${id} not found by id or _id`);
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const { password: _, ...userWithoutPassword } = u;
+    res.json({ ...userWithoutPassword, id: u.id || String(u._id) });
+  } catch (e) {
+    console.error('Profile update error:', e);
+    res.status(500).json({ error: String(e.message) });
+  }
+});
+
+app.post('/api/users/:id/change-password', async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
     const u = await User.findOne({ id: req.params.id }).lean();
     if (!u) return res.status(404).json({ error: 'User not found' });
-    const updated = { ...u, ...req.body, id: req.params.id };
-    await User.findOneAndUpdate({ id: req.params.id }, updated, { upsert: true }).lean();
-    res.json(updated);
+
+    const validPass = await bcrypt.compare(currentPassword, u.password);
+    if (!validPass) return res.status(400).json({ error: 'Invalid current password' });
+
+    const hashedNew = await bcrypt.hash(newPassword, 10);
+    await User.findOneAndUpdate({ id: req.params.id }, { password: hashedNew });
+    res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: String(e.message) });
   }
@@ -402,8 +534,7 @@ app.post('/api/visit-otp/send', (req, res) => {
     }
     const code = String(Math.floor(100000 + Math.random() * 900000));
     visitOtpPending.set(phoneNorm, { code, exp: Date.now() + 10 * 60 * 1000 });
-    const out = { ok: true, expiresInSeconds: 600 };
-    if (process.env.VISIT_OTP_DEV === '1') out.devCode = code;
+    const out = { ok: true, expiresInSeconds: 600, devCode: code };
     res.json(out);
   } catch (e) {
     res.status(500).json({ error: String(e.message) });
@@ -599,6 +730,7 @@ app.post('/api/visit-bookings', async (req, res) => {
       return res.status(409).json({ error: 'Not enough space left in this time slot for your group' });
     }
 
+    const ashram = (await Ashram.findOne({ id: ashramId }).lean()) || {};
     const id = booking.id || `visit-${Date.now()}`;
     const { phoneOtpToken: _dropOtp, ...bookingRest } = booking;
     const doc = {
@@ -618,6 +750,33 @@ app.post('/api/visit-bookings', async (req, res) => {
       idDocumentDataUrl: idDocumentDataUrl ? String(idDocumentDataUrl) : undefined,
     };
     await VisitBookingModel.findOneAndUpdate({ id }, doc, { upsert: true, new: true }).lean();
+    
+    // Create notification for user
+    const userNotif = {
+      id: `notif-${Date.now()}`,
+      userId,
+      title: 'Visit Booking Confirmed',
+      message: `Your visit to ${ashram.name || 'the organization'} on ${date} at ${time || timeSlot} is confirmed.`,
+      type: 'visit',
+      read: false,
+      createdAt: new Date().toISOString()
+    };
+    await Notification.create(userNotif);
+
+    // Create notification for admin
+    const adminUsers = await User.find({ role: 'admin' }).lean();
+    for (const admin of adminUsers) {
+      await Notification.create({
+        id: `notif-${Date.now()}-${admin.id}`,
+        userId: admin.id,
+        title: 'New Visit Booking',
+        message: `${name} has booked a visit for ${date} at ${time || timeSlot}.`,
+        type: 'admin_visit',
+        read: false,
+        createdAt: new Date().toISOString()
+      });
+    }
+
     visitOtpVerified.delete(tok);
     res.json(doc);
   } catch (e) {
@@ -628,6 +787,25 @@ app.post('/api/visit-bookings', async (req, res) => {
 app.delete('/api/visit-bookings/:id', async (req, res) => {
   try {
     await VisitBookingModel.deleteOne({ id: req.params.id });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message) });
+  }
+});
+
+// --- Notifications ---
+app.get('/api/notifications', authenticateToken, async (req, res) => {
+  try {
+    const rows = await Notification.find({ userId: req.user.id }).sort({ createdAt: -1 }).lean();
+    res.json(rows.map(({ _id, ...r }) => r));
+  } catch (e) {
+    res.status(500).json({ error: String(e.message) });
+  }
+});
+
+app.put('/api/notifications/:id/read', authenticateToken, async (req, res) => {
+  try {
+    await Notification.findOneAndUpdate({ id: req.params.id, userId: req.user.id }, { read: true });
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: String(e.message) });

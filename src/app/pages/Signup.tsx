@@ -4,14 +4,32 @@ import { Input } from '../components/ui/input';
 import { Link, useNavigate } from 'react-router';
 import { Mail, Lock, EyeOff, UserRound } from 'lucide-react';
 
+import { useUser } from '../context/UserContext';
+import { api } from '../lib/api';
+
 export function Signup() {
   const navigate = useNavigate();
+  const { login } = useUser();
   const [remember, setRemember] = useState(true);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSignup = (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Demo flow: route user to onboarding after signup
-    navigate('/onboarding');
+    setLoading(true);
+    setError(null);
+    try {
+      const resp = await api.register({ name, email, password, role: 'donor' });
+      login(resp.user, resp.token);
+      navigate('/');
+    } catch (err: any) {
+      setError(err.message || 'Signup failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -29,6 +47,12 @@ export function Signup() {
         <h1 className="text-4xl font-serif font-bold mb-1">Signup</h1>
         <p className="text-white/80 text-sm mb-6">Create your account and start helping</p>
 
+        {error && (
+          <div className="mb-4 p-2.5 rounded-xl bg-red-500/20 border border-red-500/30 text-red-200 text-xs text-center border-solid">
+            {error}
+          </div>
+        )}
+
         <form onSubmit={handleSignup} className="space-y-4">
           <div className="relative">
             <UserRound className="absolute left-3 top-3.5 h-4 w-4 text-white/70" />
@@ -36,6 +60,8 @@ export function Signup() {
               type="text"
               placeholder="Full name"
               required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
               className="pl-10 h-12 bg-black/20 border-white/35 text-white placeholder:text-white/60"
             />
           </div>
@@ -45,6 +71,8 @@ export function Signup() {
               type="email"
               placeholder="you@example.com"
               required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="pl-10 h-12 bg-black/20 border-white/35 text-white placeholder:text-white/60"
             />
           </div>
@@ -55,6 +83,8 @@ export function Signup() {
               type="password"
               placeholder="Create password"
               required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               className="pl-10 pr-10 h-12 bg-black/20 border-white/35 text-white placeholder:text-white/60"
             />
           </div>
@@ -71,9 +101,10 @@ export function Signup() {
 
           <Button
             type="submit"
+            disabled={loading}
             className="w-full text-lg h-12 border-0 bg-gradient-to-r from-lime-400 to-emerald-500 text-zinc-950 hover:from-lime-300 hover:to-emerald-400 shadow-lg"
           >
-            Create Account
+            {loading ? 'Creating Account...' : 'Create Account'}
           </Button>
         </form>
 
