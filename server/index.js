@@ -995,24 +995,26 @@ app.post('/api/init-data', async (req, res) => {
   }
 });
 
-connectDb()
-  .then(() => {
-    const server = app.listen(PORT, () => {
-      console.log(`API listening on http://localhost:${PORT}`);
-    });
-    server.on('error', (err) => {
-      if (err.code === 'EADDRINUSE') {
-        console.error(
-          `\n[API] Port ${PORT} is already in use.\n` +
-            `  Run: npx kill-port ${PORT}\n` +
-            `  Or set PORT=4001 in your .env (Vite proxy uses the same PORT).\n`,
-        );
-        process.exit(1);
-      }
-      throw err;
-    });
-  })
-  .catch((err) => {
-    console.error('MongoDB connection failed:', err);
-    process.exit(1);
+connectDb().catch((err) => {
+  console.error('MongoDB connection failed:', err);
+});
+
+// Vercel sets NODE_ENV to production. Only run app.listen locally.
+if (process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1') {
+  const server = app.listen(PORT, () => {
+    console.log(`API listening on http://localhost:${PORT}`);
   });
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(
+        `\n[API] Port ${PORT} is already in use.\n` +
+          `  Run: npx kill-port ${PORT}\n` +
+          `  Or set PORT=4001 in your .env (Vite proxy uses the same PORT).\n`,
+      );
+      process.exit(1);
+    }
+    throw err;
+  });
+}
+
+export default app;

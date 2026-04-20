@@ -53,3 +53,4 @@ logs/
 # Project-specific / leftover files
 guidelines/
 Untitled
+node_modules
