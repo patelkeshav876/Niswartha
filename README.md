@@ -109,6 +109,39 @@ pnpm dev
 
 The app will be available at `http://localhost:5173`
 
+## ✉️ SMTP Setup (Live Email Delivery)
+
+Visit booking confirmation emails are sent from the API server. If SMTP is not configured, the server falls back to Ethereal test SMTP (preview-only, no real inbox delivery).
+
+Set these variables in your local `.env`:
+
+- `SMTP_HOST`
+- `SMTP_PORT` (usually `587`)
+- `SMTP_USER`
+- `SMTP_PASS` (app password recommended)
+- `SMTP_FROM`
+- `VISIT_ADMIN_EMAIL` (fallback admin recipient if ashram email is missing)
+
+### Gmail
+
+- `SMTP_HOST=smtp.gmail.com`
+- `SMTP_PORT=587`
+- `SMTP_USER=yourgmail@gmail.com`
+- `SMTP_PASS=<Google App Password>`
+- `SMTP_FROM=yourgmail@gmail.com`
+
+You must enable 2-Step Verification and generate an App Password in Google account settings.
+
+### Zoho
+
+- `SMTP_HOST=smtp.zoho.in` (or `smtp.zoho.com` depending on your Zoho data center)
+- `SMTP_PORT=587`
+- `SMTP_USER=you@yourdomain.com`
+- `SMTP_PASS=<Zoho App Password>`
+- `SMTP_FROM=you@yourdomain.com`
+
+After updating `.env`, restart the API server.
+
 ## 🔑 Key Features Implementation
 
 ### Backend Integration

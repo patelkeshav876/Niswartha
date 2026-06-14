@@ -11,6 +11,7 @@ import * as dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Razorpay from 'razorpay';
+import nodemailer from 'nodemailer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,6 +28,15 @@ const MONGODB_URI =
     : 'mongodb://127.0.0.1:27017/orphanage-connect';
 const RAZORPAY_KEY_ID = (process.env.RAZORPAY_KEY_ID || '').trim();
 const RAZORPAY_KEY_SECRET = (process.env.RAZORPAY_KEY_SECRET || '').trim();
+const SMTP_HOST = (process.env.SMTP_HOST || '').trim();
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_USER = (process.env.SMTP_USER || '').trim();
+const SMTP_PASS = process.env.SMTP_PASS || '';
+const SMTP_FROM = (
+  process.env.SMTP_FROM || process.env.SMTP_USER || 'no-reply@orphanage-connect.local'
+).trim();
+const VISIT_ADMIN_EMAIL = (process.env.VISIT_ADMIN_EMAIL || '').trim();
+const isSmtpConfigured = Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
 
 if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
   console.warn('\n[Razorpay] Warning: RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET is missing in .env. Payments will fail.\n');
@@ -36,6 +46,16 @@ const razorpay =
   RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET
     ? new Razorpay({ key_id: RAZORPAY_KEY_ID, key_secret: RAZORPAY_KEY_SECRET })
     : null;
+
+const configuredMailTransporter = isSmtpConfigured
+  ? nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_PORT === 465,
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
+    })
+  : null;
+let fallbackMailTransporterPromise = null;
 
 const app = express();
 app.use(cors({ origin: true }));
@@ -84,6 +104,69 @@ function isValidVisitBookingDate(dateStr) {
 function normalizeVisitPhone(p) {
   const d = String(p || '').replace(/\D/g, '');
   return d.length >= 10 ? d.slice(-10) : d;
+}
+
+function isValidEmail(v) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || '').trim());
+}
+
+async function sendVisitBookingEmails({ booking, ashram }) {
+  let transporter = configuredMailTransporter;
+  if (!transporter) {
+    if (!fallbackMailTransporterPromise) {
+      fallbackMailTransporterPromise = nodemailer.createTestAccount().then((acct) => {
+        console.log('Using Ethereal SMTP fallback for emails.');
+        console.log(`Ethereal login: ${acct.user}`);
+        return nodemailer.createTransport({
+          host: 'smtp.ethereal.email',
+          port: 587,
+          secure: false,
+          auth: { user: acct.user, pass: acct.pass },
+        });
+      });
+    }
+    transporter = await fallbackMailTransporterPromise;
+  }
+
+  const userEmail = String(booking.email || '').trim();
+  const ashramEmail = String(ashram?.contact?.email || '').trim();
+  const adminEmail = ashramEmail || VISIT_ADMIN_EMAIL;
+  const recipients = [userEmail, adminEmail].filter(
+    (v, i, arr) => isValidEmail(v) && arr.indexOf(v) === i,
+  );
+  if (recipients.length === 0) return;
+
+  const visitDate = String(booking.date || '');
+  const visitTime = String(booking.time || booking.timeSlot || '');
+  const subject = `Visit Booking Confirmed - ${ashram?.name || 'Ashram Visit'}`;
+  const text =
+    `Your visit booking is confirmed.\n\n` +
+    `Organization: ${ashram?.name || 'N/A'}\n` +
+    `Date: ${visitDate}\n` +
+    `Time: ${visitTime}\n` +
+    `Name: ${booking.name || 'N/A'}\n` +
+    `Email: ${userEmail || 'N/A'}\n` +
+    `Phone: ${booking.phone || 'N/A'}\n` +
+    `Visitors: ${booking.visitorCount || 1}\n` +
+    `Purpose: ${booking.purpose || 'N/A'}\n` +
+    `Booking ID: ${booking.id || 'N/A'}\n`;
+
+  const results = await Promise.allSettled(
+    recipients.map((to) =>
+      transporter.sendMail({
+        from: SMTP_FROM,
+        to,
+        subject,
+        text,
+      }),
+    ),
+  );
+  for (const r of results) {
+    if (r.status === 'fulfilled') {
+      const previewUrl = nodemailer.getTestMessageUrl(r.value);
+      if (previewUrl) console.log(`Email preview: ${previewUrl}`);
+    }
+  }
 }
 
 function sumVisitorUseBySlot(rows) {
@@ -692,6 +775,9 @@ app.post('/api/visit-bookings', async (req, res) => {
     if (!str(name) || !str(email) || !str(phone)) {
       return res.status(400).json({ error: 'Name, email, and phone are required' });
     }
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: 'Valid email is required' });
+    }
     if (!str(userLocation)) {
       return res.status(400).json({ error: 'Your location / city is required' });
     }
@@ -806,6 +892,7 @@ app.post('/api/visit-bookings', async (req, res) => {
     }
 
     visitOtpVerified.delete(tok);
+    await sendVisitBookingEmails({ booking: doc, ashram });
     res.json(doc);
   } catch (e) {
     res.status(500).json({ error: String(e.message) });
@@ -1022,6 +1109,17 @@ app.post('/api/init-data', async (req, res) => {
     res.status(500).json({ error: String(e.message) });
   }
 });
+
+if (!isSmtpConfigured) {
+  console.warn(
+    '[EMAIL] SMTP not configured. Using Ethereal test fallback; live inbox delivery is disabled.\n' +
+      'Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, and SMTP_FROM in .env to send real emails.',
+  );
+} else {
+  console.log(
+    `[EMAIL] SMTP configured (${SMTP_HOST}:${SMTP_PORT}) as ${SMTP_USER}. Visit booking emails will be delivered to real inboxes.`,
+  );
+}
 
 connectDb().catch((err) => {
   console.error('MongoDB connection failed:', err);
